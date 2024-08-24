@@ -1,0 +1,68 @@
+# Virtual Environment
+venv/
+env/
+ENV/
+Scripts/
+Lib/
+Include/
+pyvenv.cfg
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environment variables
+.env
+
+# Logs
+*.log
+
+# CSV files (assuming you don't want to track generated reports)
+*.csv
+
+# JSON files (for instrument data, if you decide not to track it)
+# Uncomment the next line if you don't want to track JSON files
+# *.json
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Project specific
+breakout_stocks_*.csv
+instruments.csv
+stocks_to_scan.csv
+instruments.json
