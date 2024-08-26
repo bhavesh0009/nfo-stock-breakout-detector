@@ -160,7 +160,7 @@ def prepare_stocks_to_scan(instruments_file: str, output_file: str) -> None:
 
     logger.info(f"Saved {len(result)} stocks to {output_file}")
 
-def identify_breakout(df: pd.DataFrame, symbol: str, lookback: int = 20) -> Tuple[bool, str, Dict[str, float]]:
+def identify_breakout_breakdown(df: pd.DataFrame, symbol: str, lookback: int = 20) -> Tuple[bool, str, Dict[str, float]]:
     if len(df) < lookback:
         logger.debug(f"{symbol}: Not enough data for lookback period. Data points: {len(df)}")
         return False, "Insufficient Data", {}
@@ -168,50 +168,71 @@ def identify_breakout(df: pd.DataFrame, symbol: str, lookback: int = 20) -> Tupl
     df['timestamp'] = pd.to_datetime(df['timestamp'])
     df = df.sort_values('timestamp')
     df['highest_high'] = df['high'].rolling(window=lookback, min_periods=1).max()
+    df['lowest_low'] = df['low'].rolling(window=lookback, min_periods=1).min()
 
     current_close = df['close'].iloc[-1]
     previous_high = df['highest_high'].iloc[-2]
+    previous_low = df['lowest_low'].iloc[-2]
 
-    logger.debug(f"{symbol}: Data points: {len(df)}, Current close: {current_close}, Previous high: {previous_high}")
+    logger.debug(f"{symbol}: Data points: {len(df)}, Current close: {current_close}, Previous high: {previous_high}, Previous low: {previous_low}")
 
+    df['tr'] = np.maximum(df['high'] - df['low'], 
+                          np.maximum(abs(df['high'] - df['close'].shift(1)),
+                                     abs(df['low'] - df['close'].shift(1))))
+    df['atr'] = df['tr'].rolling(window=14, min_periods=1).mean()
+
+    atr = df['atr'].iloc[-1]
+    avg_volume = df['volume'].rolling(window=lookback, min_periods=1).mean().iloc[-1]
+    current_volume = df['volume'].iloc[-1]
+
+    details = {
+        "current_close": current_close,
+        "previous_high": previous_high,
+        "previous_low": previous_low,
+        "atr": atr,
+        "current_volume": current_volume,
+        "avg_volume": avg_volume
+    }
+
+    # Check for upward breakout
     if pd.notna(previous_high) and current_close > previous_high:
-        logger.debug(f"{symbol}: Potential breakout detected")
-        
-        df['tr'] = np.maximum(df['high'] - df['low'], 
-                              np.maximum(abs(df['high'] - df['close'].shift(1)),
-                                         abs(df['low'] - df['close'].shift(1))))
-        df['atr'] = df['tr'].rolling(window=14, min_periods=1).mean()
-
-        atr = df['atr'].iloc[-1]
         breakout_size = current_close - previous_high
-        logger.debug(f"{symbol}: Breakout size: {breakout_size}, ATR: {atr}")
-
-        avg_volume = df['volume'].rolling(window=lookback, min_periods=1).mean().iloc[-1]
-        current_volume = df['volume'].iloc[-1]
-        
-        details = {
-            "current_close": current_close,
-            "previous_high": previous_high,
-            "breakout_size": breakout_size,
-            "atr": atr,
-            "current_volume": current_volume,
-            "avg_volume": avg_volume
-        }
+        details["breakout_size"] = breakout_size
+        logger.debug(f"{symbol}: Potential upward breakout detected. Size: {breakout_size}")
 
         if breakout_size > atr:
             if current_volume > 1.5 * avg_volume:
-                logger.info(f"{symbol}: Full breakout confirmed")
-                return True, "Full Breakout", details
+                logger.info(f"{symbol}: Full upward breakout confirmed")
+                return True, "Full Upward Breakout", details
             else:
-                logger.debug(f"{symbol}: Partial breakout - Volume not significant enough")
-                return True, "Partial Breakout - Low Volume", details
+                logger.debug(f"{symbol}: Partial upward breakout - Volume not significant enough")
+                return True, "Partial Upward Breakout - Low Volume", details
         else:
-            logger.debug(f"{symbol}: Partial breakout - Not significant enough")
-            return True, "Partial Breakout - Small Size", details
-    else:
-        logger.debug(f"{symbol}: No breakout detected")
-        return False, "No Breakout", {}
+            logger.debug(f"{symbol}: Partial upward breakout - Not significant enough")
+            return True, "Partial Upward Breakout - Small Size", details
 
+    # Check for downward breakdown
+    elif pd.notna(previous_low) and current_close < previous_low:
+        breakdown_size = previous_low - current_close
+        details["breakdown_size"] = breakdown_size
+        logger.debug(f"{symbol}: Potential downward breakdown detected. Size: {breakdown_size}")
+
+        if breakdown_size > atr:
+            if current_volume > 1.5 * avg_volume:
+                logger.info(f"{symbol}: Full downward breakdown confirmed")
+                return True, "Full Downward Breakdown", details
+            else:
+                logger.debug(f"{symbol}: Partial downward breakdown - Volume not significant enough")
+                return True, "Partial Downward Breakdown - Low Volume", details
+        else:
+            logger.debug(f"{symbol}: Partial downward breakdown - Not significant enough")
+            return True, "Partial Downward Breakdown - Small Size", details
+
+    else:
+        logger.debug(f"{symbol}: No breakout or breakdown detected")
+        return False, "No Breakout/Breakdown", details
+
+# Update the scan_for_breakouts function to use the new identify_breakout_breakdown function
 def scan_for_breakouts(connector: AngelOneConnector, instrument_manager: InstrumentManager, symbols: List[str]) -> List[Dict[str, any]]:
     breakout_stocks = []
     delay = 1  # Start with a 1 second delay
@@ -234,7 +255,7 @@ def scan_for_breakouts(connector: AngelOneConnector, instrument_manager: Instrum
                     
                     if df is not None and not df.empty:
                         logger.debug(f"{symbol}: Retrieved {len(df)} days of data")
-                        is_breakout, breakout_type, details = identify_breakout(df, symbol)
+                        is_breakout, breakout_type, details = identify_breakout_breakdown(df, symbol)
                         if is_breakout:
                             breakout_stocks.append({
                                 "symbol": symbol,
